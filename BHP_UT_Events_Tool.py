@@ -23,9 +23,20 @@ def asset_type_string(string):
 
 if __name__ == "__main__":
 
-    print('Starting...')
-    df = pd.read_excel('C:\\Py\\BHP_Data.xlsx', sheet_name='Equipment Master Import')
+    request_file_paths = False
 
+    file_path = 'C:\\Py\\BHP_Data.xlsx'
+    output_path = 'C:\\Py\\BHP_Data_Out.xlsx'
+    asset_import_path = 'C:\\Py\\BHP_Assets_to_Import.xlsx'
+
+    if request_file_paths is True:
+        file_path = input('\nEnter File Path:')
+        output_path = input('\nEnter File Output Path:')
+        asset_import_path = input('\nEnter Asset Import File Output Path:')
+
+    df = pd.read_excel(file_path, sheet_name='Equipment Master Import')
+    print('\nReading File...')
+    print('\nProcessing data...')
     target_columns = ['UT-WT.Reading 1 (N-12)',
                       'UT-WT.Reading 2 (E-3)',
                       'UT-WT.Reading 3 (S-6)',
@@ -36,14 +47,17 @@ if __name__ == "__main__":
     last_cml_suffix = 0.01
     location = ''
 
-
     for index, row in progressbar(enumerate(df.iterrows()), max_value=int(df.shape[0])):
         asset_location = row[1]['Asset Location.Full Location (Parent)'].split(' / ')
         cml_location = row[1]['CMLs'].strip(' /').strip().split(' / ')
         dfh = row[1].to_frame().transpose()
 
+        # current_location = str(row[1]['UT-WT.Location'])
+        # previous_location = str(df.iloc[index - 1]['UT-WT.Location'])
         if asset_location[-1] == cml_location[-1]:
             i = df.iloc[index-1]['CMLs'].split(' / ')[-1]
+            # if current_location != previous_location:
+            #     last_cml_int = last_cml_int + 1
             if i.isdigit():
                 last_cml_int = int(i)
             else:
@@ -103,16 +117,15 @@ if __name__ == "__main__":
         if column in out_df.columns.values:
             out_df_2[columns_out[column]] = out_df[column]
 
-
     # write to excel
-    print('Writing events to excel...')
-    out_df.to_excel('C:\\Py\\BHP_out.xlsx', sheet_name='UT Import', index=False)
-    out_df.to_excel('C:\\Py\\BHP_out.xlsx', sheet_name='UT Import', index=False)
+    print('\nWriting to excel...')
+    out_df_2.to_excel(output_path, sheet_name='UT Import', index=False)
 
     # check if Parent or CML exists in NEXUS_IC
-    check_df = pd.read_excel('C:\\Py\\BHP_Data.xlsx', sheet_name='Assets')
+    check_df = pd.read_excel(file_path, sheet_name='Assets')
     check_df['Asset Name'] = check_df['Asset Location.Full Location'].apply(lambda y: y.split(' / ')[-1])
 
+    print('\nChecking assets...')
     asset_import_df = pd.DataFrame([])
     asset_import_df['Parent Asset'] = out_df['Asset Location.Full Location (Parent)']
     asset_import_df['CMLs'] = out_df['CMLs']
@@ -129,7 +142,10 @@ if __name__ == "__main__":
 
     asset_to_nexus.drop_duplicates(inplace=True, ignore_index=True)
 
+    print('\nWriting asset import...')
     asset_to_nexus['Asset.Asset Type'] = asset_to_nexus['Asset Location.Full Location'].apply(
         lambda x: asset_type_string(x))
 
-    asset_to_nexus.to_excel('C:\\Py\\New Assets.xlsx', index=False)
+    asset_to_nexus.to_excel(asset_import_path, index=False, sheet_name='Assets Import')
+    print('\nDone')
+    p = input('press Enter to Exit')

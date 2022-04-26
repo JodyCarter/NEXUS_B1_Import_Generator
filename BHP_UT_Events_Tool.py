@@ -29,16 +29,9 @@ def assign_size(parent_val, cml_val):
         return parent_val
 
 
-def size_column_by_type(type):
-    col_type_dict = {'Vessel TML': 'Vessel Data.Outside Diameter',
-                     'Tank TML': 'Welded Storage Tanks.Tank Outside Diameter',
-                     'Heat Exchanger TML': 'HE Air Coolers.Tube Diameter'}
-    return col_type_dict[type]
-
-
 def process_to_numeric(x):
     j = {'½': '.5', '¾': '.75'}
-    if pd.isnull(x) == True or x == ' ':
+    if pd.isnull(x) or x == ' ':
         return 0
     else:
         for key in j:
@@ -49,7 +42,7 @@ def process_to_numeric(x):
 
 if __name__ == "__main__":
 
-    request_file_paths = False
+    request_file_paths = True
 
     file_path = 'C:\\Py\\TT Vessel Inspections Combined Import.xlsx'
     output_path = 'C:\\Py\\TT Vessel Inspections Combined Import OUT.xlsx'
@@ -113,7 +106,6 @@ if __name__ == "__main__":
     out_df['UT-WT.Date of Reading'] = out_df['UT-WT.Date of Reading_B'].dt.strftime('%m/%d/%Y')
     out_df['Event.Start Clock'] = out_df['UT-WT.Date of Reading_B'].dt.strftime('%m/%d/%Y %r')
     out_df['Event.End Clock'] = out_df['UT-WT.Date of Reading_B'].dt.strftime('%m/%d/%Y %r')
-    # out_df['Vessel Data.Year Build'] = out_df['Vessel Data.Year Build'].dt.strftime('%m/%d/%Y')
 
     columns_out = {'CMLs': 'Asset Location.Full Location',
                    'Workpack.Name': 'Workpack.Name',
@@ -147,7 +139,6 @@ if __name__ == "__main__":
     # convert UT Readings from Inches to mm
     out_df_2['UT-WT.Reading'] = out_df_2['UT-WT.Reading'].apply(lambda x: process_to_numeric(x) * 25.4)
 
-
     # write to excel
     print('\nWriting to excel...')
     out_df_2.to_excel(output_path, sheet_name='UT Import', index=False)
@@ -157,7 +148,8 @@ if __name__ == "__main__":
     check_df = pd.read_excel(file_path, sheet_name='Assets')
 
     asset_import_df = pd.DataFrame([])
-    asset_import_df[['Asset Location.Full Location', 'CMLs']] = out_df[['Asset Location.Full Location (Parent)', 'CMLs']]
+    asset_import_df[['Asset Location.Full Location', 'CMLs']] = \
+        out_df[['Asset Location.Full Location (Parent)', 'CMLs']]
     asset_import_df.drop_duplicates().reindex()
 
     check_df.rename(columns={'Asset Type.Name': 'Asset Type.Name - Check'}, inplace=True)
@@ -166,7 +158,8 @@ if __name__ == "__main__":
     asset_to_nexus.rename(columns={'CMLs': 'Asset Location.Full Location'}, inplace=True)
     asset_to_nexus.drop_duplicates(inplace=True, ignore_index=True)
 
-    asset_to_nexus['Asset.Asset Type'] = asset_to_nexus['Asset Location.Full Location'].apply(lambda x: asset_type_string(x))
+    asset_to_nexus['Asset.Asset Type'] = asset_to_nexus['Asset Location.Full Location'].apply(
+        lambda x: asset_type_string(x))
 
     print('Checking Diameters...')
     out_part = out_df[['CMLs', 'Size (Inches)']]
@@ -193,4 +186,3 @@ if __name__ == "__main__":
     asset_to_nexus_2.to_excel(asset_import_path, index=False, sheet_name='Assets Import')
 
     print('\nDone')
-    # end = input('press Enter to Exit')

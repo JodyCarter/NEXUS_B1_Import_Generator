@@ -1,3 +1,4 @@
+import numpy
 import numpy as np
 import pandas as pd
 from progressbar import progressbar
@@ -21,12 +22,37 @@ def asset_type_string(string):
     return 'NOT FOUND'
 
 
+def assign_size(parent_val, cml_val):
+    if cml_val != numpy.NaN:
+        return cml_val
+    else:
+        return parent_val
+
+
+def size_column_by_type(type):
+    col_type_dict = {'Vessel TML': 'Vessel Data.Outside Diameter',
+                     'Tank TML': 'Welded Storage Tanks.Tank Outside Diameter',
+                     'Heat Exchanger TML': 'HE Air Coolers.Tube Diameter'}
+    return col_type_dict[type]
+
+
+def process_to_numeric(x):
+    j = {'½': '.5', '¾': '.75'}
+    if pd.isnull(x) == True or x == ' ':
+        return 0
+    else:
+        for key in j:
+            if key in str(x):
+                x = x.replace(key, j[key])
+        return pd.to_numeric(x)
+
+
 if __name__ == "__main__":
 
     request_file_paths = False
 
-    file_path = 'C:\\Py\\BHP_Data.xlsx'
-    output_path = 'C:\\Py\\BHP_Data_Out.xlsx'
+    file_path = 'C:\\Py\\TT Vessel Inspections Combined Import.xlsx'
+    output_path = 'C:\\Py\\TT Vessel Inspections Combined Import OUT.xlsx'
     asset_import_path = 'C:\\Py\\BHP_Assets_to_Import.xlsx'
 
     if request_file_paths is True:
@@ -87,6 +113,7 @@ if __name__ == "__main__":
     out_df['UT-WT.Date of Reading'] = out_df['UT-WT.Date of Reading_B'].dt.strftime('%m/%d/%Y')
     out_df['Event.Start Clock'] = out_df['UT-WT.Date of Reading_B'].dt.strftime('%m/%d/%Y %r')
     out_df['Event.End Clock'] = out_df['UT-WT.Date of Reading_B'].dt.strftime('%m/%d/%Y %r')
+    # out_df['Vessel Data.Year Build'] = out_df['Vessel Data.Year Build'].dt.strftime('%m/%d/%Y')
 
     columns_out = {'CMLs': 'Asset Location.Full Location',
                    'Workpack.Name': 'Workpack.Name',
@@ -117,35 +144,53 @@ if __name__ == "__main__":
         if column in out_df.columns.values:
             out_df_2[columns_out[column]] = out_df[column]
 
+    # convert UT Readings from Inches to mm
+    out_df_2['UT-WT.Reading'] = out_df_2['UT-WT.Reading'].apply(lambda x: process_to_numeric(x) * 25.4)
+
+
     # write to excel
     print('\nWriting to excel...')
     out_df_2.to_excel(output_path, sheet_name='UT Import', index=False)
 
     # check if Parent or CML exists in NEXUS_IC
-    check_df = pd.read_excel(file_path, sheet_name='Assets')
-    check_df['Asset Name'] = check_df['Asset Location.Full Location'].apply(lambda y: y.split(' / ')[-1])
-
     print('\nChecking assets...')
+    check_df = pd.read_excel(file_path, sheet_name='Assets')
+
     asset_import_df = pd.DataFrame([])
-    asset_import_df['Parent Asset'] = out_df['Asset Location.Full Location (Parent)']
-    asset_import_df['CMLs'] = out_df['CMLs']
-    asset_import_df['Parent Exists'] = out_df['Asset Location.Full Location (Parent)'].apply(
-        lambda m: m in check_df['Asset Location.Full Location'].values)
-    asset_import_df['CML Exists'] = out_df['CMLs'].apply(
-        lambda l: l in check_df['Asset Location.Full Location'].values)
+    asset_import_df[['Asset Location.Full Location', 'CMLs']] = out_df[['Asset Location.Full Location (Parent)', 'CMLs']]
+    asset_import_df.drop_duplicates().reindex()
 
-    a1 = pd.DataFrame([])
-    a1['Asset Location.Full Location'] = asset_import_df[asset_import_df['Parent Exists'] == False]['Parent Asset']
-    a2 = pd.DataFrame([])
-    a2['Asset Location.Full Location'] = asset_import_df[asset_import_df['CML Exists'] == False]['CMLs']
-    asset_to_nexus = pd.concat([a1, a2])
-
+    check_df.rename(columns={'Asset Type.Name': 'Asset Type.Name - Check'}, inplace=True)
+    asset_to_nexus = pd.merge(asset_import_df, check_df, on='Asset Location.Full Location', how='left')
+    asset_to_nexus.rename(columns={'Asset Location.Full Location': 'DR'}, inplace=True)
+    asset_to_nexus.rename(columns={'CMLs': 'Asset Location.Full Location'}, inplace=True)
     asset_to_nexus.drop_duplicates(inplace=True, ignore_index=True)
 
-    print('\nWriting asset import...')
-    asset_to_nexus['Asset.Asset Type'] = asset_to_nexus['Asset Location.Full Location'].apply(
-        lambda x: asset_type_string(x))
+    asset_to_nexus['Asset.Asset Type'] = asset_to_nexus['Asset Location.Full Location'].apply(lambda x: asset_type_string(x))
 
-    asset_to_nexus.to_excel(asset_import_path, index=False, sheet_name='Assets Import')
+    print('Checking Diameters...')
+    out_part = out_df[['CMLs', 'Size (Inches)']]
+    out_part.rename(columns={'CMLs': 'Asset Location.Full Location'}, inplace=True)
+    asset_to_nexus_2 = pd.merge(asset_to_nexus, out_part, on='Asset Location.Full Location', how='left')
+
+    col_type_dict = {'Vessel TML': 'Vessel Data.Outside Diameter (in)',
+                     'Tank TML': 'Welded Storage Tanks.Tank Inside Diameter (mm)',
+                     'Piping': 'NPS (Inches)',
+                     'Heat Exchanger TML': 'Heat Exchangers.Nominal Wall Thickness (mm)'}
+
+    for index in progressbar(range(asset_to_nexus_2.shape[0])):
+        colm = col_type_dict[asset_to_nexus_2['Asset.Asset Type'].iloc[index]]
+        if pd.isnull(asset_to_nexus_2['Size (Inches)'].iloc[index]) is not True:
+            val = process_to_numeric(asset_to_nexus_2['Size (Inches)'].iloc[index])
+            if '(mm)' in colm:
+                asset_to_nexus_2[colm].iloc[index] = val * 25.4  # in to mm
+            else:
+                asset_to_nexus_2[colm].iloc[index] = val  # in to mm
+
+    asset_to_nexus_2.drop(['DR', 'Asset Type.Name - Check', 'Size (Inches)'], axis=1, inplace=True)
+
+    print('\nWriting asset import...')
+    asset_to_nexus_2.to_excel(asset_import_path, index=False, sheet_name='Assets Import')
+
     print('\nDone')
-    p = input('press Enter to Exit')
+    # end = input('press Enter to Exit')

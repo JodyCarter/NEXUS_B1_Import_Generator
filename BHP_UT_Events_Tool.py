@@ -42,14 +42,20 @@ def process_to_numeric(x):
 
 if __name__ == "__main__":
 
-    request_file_paths = True
+    request_file_paths = False
 
-    file_path = 'C:\\Py\\TT Vessel Inspections Combined Import.xlsx'
-    output_path = 'C:\\Py\\TT Vessel Inspections Combined Import OUT.xlsx'
-    asset_import_path = 'C:\\Py\\BHP_Assets_to_Import.xlsx'
+    file_path = 'C:\\Py\\BHP\\Data_In.xlsx'
+    file_path_assets = 'C:\\Py\\BHP\\Asset_Data.xlsx'
+    output_path = 'C:\\Py\\BHP\\Data_Out_1.xlsx'
+    asset_import_path = 'C:\\Py\\BHP\\Assets_Import.xlsx'
+
+    # instructions = '''1. Export all applicable assets with the following AIGs: ['Vessel Data', 'Welded Storage Tanks',
+    # 'Piping', 'Heat Exchangers'] AIGs'''
 
     if request_file_paths is True:
-        file_path = input('\nEnter File Path:')
+        # print(instructions)
+        file_path = input('\nEnter Data File Path:')
+        file_path_assets = input('\nEnter Asset Data File Path:')
         output_path = input('\nEnter File Output Path:')
         asset_import_path = input('\nEnter Asset Import File Output Path:')
 
@@ -101,7 +107,7 @@ if __name__ == "__main__":
 
     out_df.reindex()
 
-    out_df['Event.Event Type'] = 'UT Wall Thickness'
+    out_df['Event.Event Type'] = 'UT-WT'
     out_df['UT-WT.Date of Reading_B'] = pd.to_datetime(out_df['UT-WT.Date of Reading'])
     out_df['UT-WT.Date of Reading'] = out_df['UT-WT.Date of Reading_B'].dt.strftime('%m/%d/%Y')
     out_df['Event.Start Clock'] = out_df['UT-WT.Date of Reading_B'].dt.strftime('%m/%d/%Y %r')
@@ -145,7 +151,7 @@ if __name__ == "__main__":
 
     # check if Parent or CML exists in NEXUS_IC
     print('\nChecking assets...')
-    check_df = pd.read_excel(file_path, sheet_name='Assets')
+    check_df = pd.read_excel(file_path_assets, sheet_name='Assets')
 
     asset_import_df = pd.DataFrame([])
     asset_import_df[['Asset Location.Full Location', 'CMLs']] = \
@@ -166,19 +172,21 @@ if __name__ == "__main__":
     out_part.rename(columns={'CMLs': 'Asset Location.Full Location'}, inplace=True)
     asset_to_nexus_2 = pd.merge(asset_to_nexus, out_part, on='Asset Location.Full Location', how='left')
 
-    col_type_dict = {'Vessel TML': 'Vessel Data.Outside Diameter (in)',
-                     'Tank TML': 'Welded Storage Tanks.Tank Inside Diameter (mm)',
-                     'Piping': 'NPS (Inches)',
-                     'Heat Exchanger TML': 'Heat Exchangers.Nominal Wall Thickness (mm)'}
+    col_type_dict = {'Vessel TML': ['Vessel Data.Outside Diameter', ''],
+                     'Tank TML': ['Welded Storage Tanks.Tank Inside Diameter', '(mm)'],
+                     'Piping': ['NPS (Inches)', ''],
+                     'Heat Exchanger TML': ['Heat Exchangers.Nominal Wall Thickness', '(mm)']}
+
+    # Export all assets and ['Vessel Data', 'Welded Storage Tanks', 'Piping', 'Heat Exchangers'] AIGs
 
     for index in progressbar(range(asset_to_nexus_2.shape[0])):
         colm = col_type_dict[asset_to_nexus_2['Asset.Asset Type'].iloc[index]]
         if pd.isnull(asset_to_nexus_2['Size (Inches)'].iloc[index]) is not True:
             val = process_to_numeric(asset_to_nexus_2['Size (Inches)'].iloc[index])
-            if '(mm)' in colm:
-                asset_to_nexus_2[colm].iloc[index] = val * 25.4  # in to mm
+            if '(mm)' in colm[1]:
+                asset_to_nexus_2[colm[0]].iloc[index] = val * 25.4  # in to mm
             else:
-                asset_to_nexus_2[colm].iloc[index] = val  # in to mm
+                asset_to_nexus_2[colm[0]].iloc[index] = val  # in to mm
 
     asset_to_nexus_2.drop(['DR', 'Asset Type.Name - Check', 'Size (Inches)'], axis=1, inplace=True)
 
